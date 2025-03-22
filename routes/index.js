@@ -4,6 +4,8 @@ const Doctor = require("../models/doctors.model");
 const User = require("../models/user.model");
 const verifyToken = require("../middlewire/verification.middle");
 const AppointmentSlot = require("../models/apporitmentslots.model");
+let mongoose = require("mongoose");
+const Patient = require('../models/patients.model'); // Make sure path is correct
 
 
 // Create doctor API
@@ -124,6 +126,49 @@ router.get("/get-my-doctors", verifyToken, async (req, res) => {
   }
 });
 
+router.post("/get-all-doctors-byhospital", async (req, res) => {
+    try {
+      const { hospital_id } = req.body;
+  
+      // Validate input
+      if (!hospital_id || !mongoose.Types.ObjectId.isValid(hospital_id)) {
+        return res.status(400).json({ msg: "Invalid or missing hospital_id" });
+      }
+  
+      const user = await User.findById(hospital_id);
+      if (!user) {
+        return res.status(404).json({ msg: "User not found" });
+      }
+  
+      const doctors = await Doctor.find({ user: hospital_id });
+  
+      if (!doctors.length) {
+        return res.status(404).json({ msg: "No doctors found for this user" });
+      }
+  
+      const data = [{
+        count: doctors.length,
+        doctors: doctors.map(doctor => ({
+          doctorId: doctor._id,
+          doctorName: doctor.name,
+          specialization: doctor.specialization,
+          experience: doctor.experience,
+          contact: doctor.contact,
+          doctorImage: doctor.doctorImage
+        }))
+      }];
+  
+      res.status(200).json({
+        msg: "Doctors retrieved successfully",
+        data
+      });
+  
+    } catch (err) {
+      console.error("Error:", err.message);
+      res.status(500).json({ msg: "Server Error", error: err.message });
+    }
+  });
+
 
 router.post("/create-slot", verifyToken, async (req, res) => {
   try {
@@ -167,4 +212,115 @@ router.post("/create-slot", verifyToken, async (req, res) => {
       res.status(500).json({ msg: "Server Error", error: err.message });
   }
 });
+router.get("/get-all-slots", verifyToken, async (req, res) => {
+    try {
+      const userId = req.user.userId;
+  
+      if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ msg: "Invalid or missing user ID" });
+      }
+  
+      // Check if user exists
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ msg: "User not found" });
+      }
+  
+      // Find all appointment slots created by this user
+      const slots = await AppointmentSlot.find({ userId })
+        .populate('doctorId', 'name specialization') // Optional: enrich doctor info
+        .sort({ date: 1, 'slots.startTime': 1 });     // Optional: sort by date/time
+  
+      res.status(200).json({
+        msg: "Appointment slots retrieved successfully",
+        total: slots.length,
+        slots
+      });
+  
+    } catch (err) {
+      console.error("Error fetching slots:", err.message);
+      res.status(500).json({ msg: "Server Error", error: err.message });
+    }
+  });
+  
+router.post('/patients/add', async (req, res) => {
+    try {
+      const { name, contactNumber, diagnosis, doctorId, hospitalId,slotId } = req.body;
+  
+      // Validate input
+      if (!name || !contactNumber || !diagnosis || !doctorId || !hospitalId ||!slotId) {
+        return res.status(400).json({ msg: "All fields are required" });
+      }
+  
+      // Validate ObjectIds
+      if (!mongoose.Types.ObjectId.isValid(doctorId) || !mongoose.Types.ObjectId.isValid(hospitalId)) {
+        return res.status(400).json({ msg: "Invalid doctorId or hospitalId" });
+      }
+  
+      const newPatient = new Patient({
+        name,
+        contactNumber,
+        diagnosis,
+        doctorId,
+        hospitalId,
+        slotId
+      });
+  
+      await newPatient.save();
+  
+      res.status(201).json({
+        msg: "Patient added successfully",
+        patient: newPatient
+      });
+    } catch (error) {
+      console.error("Error adding patient:", error.message);
+      res.status(500).json({ msg: "Server Error", error: error.message });
+    }
+  });
+
+router.get('/patients/get-all', verifyToken, async (req, res) => {
+    try {
+      const userId = req?.user?.userId;
+      if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ msg: "Invalid or missing user ID" });
+      }
+  
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ msg: "Hospital not found" });
+      }
+  
+      let patients = await Patient.find({ hospitalId: userId })
+        .populate('doctorId', 'name specialization')
+        .sort({ createdAt: -1 });
+  
+      // Manually inject slot details
+      for (let patient of patients) {
+        if (patient.slotId) {
+          const slotData = await AppointmentSlot.findOne(
+            { 'slots._id': patient.slotId },
+            { slots: { $elemMatch: { _id: patient.slotId } } }
+          );
+  
+          if (slotData && slotData.slots.length > 0) {
+            patient._doc.slotDetails = slotData.slots[0]; // inject custom field
+          } else {
+            patient._doc.slotDetails = null;
+          }
+        } else {
+          patient._doc.slotDetails = null;
+        }
+      }
+  
+      res.status(200).json({
+        msg: "Patients retrieved successfully",
+        total: patients.length,
+        patients
+      });
+  
+    } catch (error) {
+      console.error("Error fetching patients:", error.message);
+      res.status(500).json({ msg: "Server Error", error: error.message });
+    }
+  });
 module.exports = router;
