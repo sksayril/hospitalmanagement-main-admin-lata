@@ -48,6 +48,32 @@ router.post("/create-doctor", verifyToken, async (req, res) => {
   }
 });
 
+router.get("/getall-doctors",  async (req, res) => {
+  try {
+      // Find all doctors from the database
+      const doctors = await Doctor.find();
+
+      if (doctors.length === 0) {
+          return res.status(404).json({ msg: "No doctors found" });
+      }
+
+      // Map the doctor data to a cleaner format for the response
+      const doctorData = doctors.map(doctor => ({
+          doctorName: doctor.name,
+          doctorspecialization: doctor.specialization,
+          doctorexperience: doctor.experience,
+          doctorcontact: doctor.contact,
+          doctordoctorImage: doctor.doctorImage
+      }));
+
+      res.status(200).json({ msg: "Doctors retrieved successfully", data: doctorData });
+
+  } catch (err) {
+      console.error("Error:", err.message);
+      res.status(500).json({ msg: "Server Error", error: err.message });
+  }
+});
+
 router.post("/edit-doctor", verifyToken, async (req, res) => {
   try {
       const { doctorId,name, specialization, experience, contact, doctorImage } = req.body;
@@ -126,48 +152,48 @@ router.get("/get-my-doctors", verifyToken, async (req, res) => {
   }
 });
 
-router.post("/get-all-doctors-byhospital", async (req, res) => {
-    try {
-      const { hospital_id } = req.body;
-  
-      // Validate input
-      if (!hospital_id || !mongoose.Types.ObjectId.isValid(hospital_id)) {
-        return res.status(400).json({ msg: "Invalid or missing hospital_id" });
-      }
-  
-      const user = await User.findById(hospital_id);
-      if (!user) {
-        return res.status(404).json({ msg: "User not found" });
-      }
-  
-      const doctors = await Doctor.find({ user: hospital_id });
-  
-      if (!doctors.length) {
-        return res.status(404).json({ msg: "No doctors found for this user" });
-      }
-  
-      const data = [{
-        count: doctors.length,
-        doctors: doctors.map(doctor => ({
-          doctorId: doctor._id,
-          doctorName: doctor.name,
-          specialization: doctor.specialization,
-          experience: doctor.experience,
-          contact: doctor.contact,
-          doctorImage: doctor.doctorImage
-        }))
-      }];
-  
-      res.status(200).json({
-        msg: "Doctors retrieved successfully",
-        data
-      });
-  
-    } catch (err) {
-      console.error("Error:", err.message);
-      res.status(500).json({ msg: "Server Error", error: err.message });
+router.get("/get-all-doctors-byhospital/:hospital_id", async (req, res) => {
+  try {
+    const { hospital_id } = req.params;
+
+    // Validate hospital_id
+    if (!hospital_id || !mongoose.Types.ObjectId.isValid(hospital_id)) {
+      return res.status(400).json({ msg: "Invalid or missing hospital_id" });
     }
-  });
+
+    const user = await User.findById(hospital_id);
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    const doctors = await Doctor.find({ user: hospital_id });
+
+    if (!doctors.length) {
+      return res.status(404).json({ msg: "No doctors found for this user" });
+    }
+
+    const data = [{
+      count: doctors.length,
+      doctors: doctors.map(doctor => ({
+        doctorId: doctor._id,
+        doctorName: doctor.name,
+        specialization: doctor.specialization,
+        experience: doctor.experience,
+        contact: doctor.contact,
+        doctorImage: doctor.doctorImage
+      }))
+    }];
+
+    res.status(200).json({
+      msg: "Doctors retrieved successfully",
+      data
+    });
+
+  } catch (err) {
+    console.error("Error:", err.message);
+    res.status(500).json({ msg: "Server Error", error: err.message });
+  }
+});
 
 
 router.post("/create-slot", verifyToken, async (req, res) => {
@@ -242,6 +268,39 @@ router.get("/get-all-slots", verifyToken, async (req, res) => {
       res.status(500).json({ msg: "Server Error", error: err.message });
     }
   });
+router.get("/get-all-slots/:doctorId", async (req, res) => {
+    try {
+      const { doctorId } = req.params;
+  
+      // Validate doctorId
+      if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId)) {
+        return res.status(400).json({ msg: "Invalid or missing doctorId" });
+      }
+  
+      // Optional: check if doctor exists (optional validation)
+      const doctorExists = await Doctor.findById(doctorId);
+      if (!doctorExists) {
+        return res.status(404).json({ msg: "Doctor not found" });
+      }
+  
+      // Get all slots for that doctor
+      const slots = await AppointmentSlot.find({ doctorId })
+        .populate('userId', 'name email') // Optionally populate hospital info
+        .sort({ date: 1, 'slots.startTime': 1 });
+  
+      res.status(200).json({
+        msg: "Slots retrieved successfully",
+        total: slots.length,
+        slots
+      });
+  
+    } catch (err) {
+      console.error("Error fetching slots:", err.message);
+      res.status(500).json({ msg: "Server Error", error: err.message });
+    }
+  });
+  
+
   
 router.post('/patients/add', async (req, res) => {
     try {
@@ -323,4 +382,17 @@ router.get('/patients/get-all', verifyToken, async (req, res) => {
       res.status(500).json({ msg: "Server Error", error: error.message });
     }
   });
+
+
+  router.get("/get-all-hospital", async (req, res) => {
+    try {
+      let HospitalData = await User.find(); // ✅ await is necessary
+      res.status(200).json(HospitalData);   // ✅ send the actual array of data
+    } catch (err) {
+      console.error("Error fetching hospitals:", err.message);
+      res.status(500).json({ msg: "Server Error", error: err.message });
+    }
+  });
+  
+  
 module.exports = router;
