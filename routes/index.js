@@ -394,5 +394,44 @@ router.get('/patients/get-all', verifyToken, async (req, res) => {
     }
   });
   
+  router.get("/dashboard", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        // Get all doctors created by this admin
+        const doctors = await Doctor.find({ user: userId });
+        const doctorCount = doctors.length;
+        // Get recent added doctors, limited to 5
+        const recentDoctors = await Doctor.find({ user: userId }).sort({ createdAt: -1 }).limit(5);
+        // Get total patients for this hospital admin
+        const patientCount = await Patient.countDocuments({ hospitalId: userId });
+        // Month-wise patient data
+        const patientsByMonthAgg = await Patient.aggregate([
+            { $match: { hospitalId: new mongoose.Types.ObjectId(userId) } },
+            { $group: {
+                _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
+                count: { $sum: 1 }
+            } },
+            { $sort: { "_id.year": 1, "_id.month": 1 } }
+        ]);
+        const patientsByMonth = patientsByMonthAgg.map(item => ({
+            year: item._id.year,
+            month: item._id.month,
+            count: item.count
+        }));
+        res.status(200).json({
+            msg: "Dashboard data retrieved successfully",
+            data: {
+                doctors,
+                doctorCount,
+                recentDoctors,
+                patientCount,
+                patientsByMonth
+            }
+        });
+    } catch (err) {
+        console.error("Error fetching dashboard data:", err.message);
+        res.status(500).json({ msg: "Server Error", error: err.message });
+    }
+});
   
 module.exports = router;
